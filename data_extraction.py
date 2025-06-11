@@ -1,6 +1,7 @@
 import json
 import os
 import pandas as pd
+import numpy as np
 from sleeper_wrapper import Stats, Players
 
 def load_all_players(players_api, cache_file="players_cache.json"):
@@ -29,27 +30,38 @@ def collect_advanced_player_stats(season, weeks, position_filter=None):
         for player_id, stat in week_stats.items():
             player_info = all_players.get(player_id)
 
-            if (
-                not player_info or
-                not player_info.get("full_name") or
-                player_info.get("position") == "DEF" or
-                player_id.startswith("TEAM_")
-            ):
+            if not player_info or player_id.startswith("TEAM_"):
                 continue
 
-            if position_filter and player_info.get("position") not in position_filter:
+            position = player_info.get("position")
+            team = player_info.get("team")
+            name = player_info.get("full_name")
+
+            # Generate readable name for defenses
+            if not name:
+                if position == "DEF" and team:
+                    name = f"{team} DEF"
+                else:
+                    name = "Unknown"
+
+            # Optional filter
+            if position_filter and position not in position_filter:
                 continue
 
             if player_id not in player_data:
                 player_data[player_id] = {
-                    "name": player_info.get("full_name", "Unknown"),
-                    "position": player_info.get("position"),
-                    "team": player_info.get("team"),
+                    "name": name,
+                    "position": position,
+                    "team": team,
+                    "bye_week": player_info.get("bye_week", None),
                     "total_points": 0,
                     "weekly_points": [],
                     "injury_weeks_missed": 0,
                     "projection_diffs": [],
-                    "projection_hits": []
+                    "projection_hits": [],
+                    "boom_games": 0,
+                    "bust_games": 0,
+                    "total_over": 0
                 }
 
             actual = stat.get("pts_ppr")
@@ -58,7 +70,13 @@ def collect_advanced_player_stats(season, weeks, position_filter=None):
             if actual is not None:
                 pdata = player_data[player_id]
                 pdata["total_points"] += actual
+                if actual > 10:
+                    pdata["total_over"] += 1
                 pdata["weekly_points"].append(actual)
+                if actual > 20:
+                    pdata["boom_games"] += 1
+                if actual < 5:
+                    pdata["bust_games"] += 1
 
                 if projected is not None:
                     diff = actual - projected
@@ -67,36 +85,69 @@ def collect_advanced_player_stats(season, weeks, position_filter=None):
             else:
                 player_data[player_id]["injury_weeks_missed"] += 1
 
-    # Normal stats
-    normal = [
-        {
-            "name": pdata["name"],
-            "position": pdata["position"],
-            "team": pdata["team"],
-            "total_points": pdata["total_points"]
-        }
-        for pdata in player_data.values()
-    ]
+    # Output dataframes
+    normal, trade, waiver = [], [], []
 
-    # Engineered features
-    enriched = []
     for pdata in player_data.values():
         points = pdata["weekly_points"]
-        boom = sum(p > 20 for p in points)
-        bust = sum(p < 5 for p in points)
         diffs = pdata["projection_diffs"]
         hits = pdata["projection_hits"]
 
-        enriched.append({
+        avg_last_3 = sum(points[-3:]) / min(3, len(points)) if points else 0
+        avg_projection_diff = sum(diffs) / len(diffs) if diffs else 0
+        projection_accuracy = sum(hits) / len(hits) if hits else 0
+        volatility = np.std(points) if points else 0
+        ros_projection = np.mean(points) * (17 - len(points)) if points else 0
+        trade_score = (
+            avg_last_3 * 0.5 +
+            projection_accuracy * 20 +
+            avg_projection_diff * 0.3 +
+            pdata["boom_games"] * 0.3 -
+            pdata["bust_games"] * 0.5 -
+            pdata["injury_weeks_missed"] * 1.0
+        )
+
+        normal.append({
             "name": pdata["name"],
             "position": pdata["position"],
             "team": pdata["team"],
-            "avg_pts_last_3": sum(points[-3:]) / min(3, len(points)) if points else 0,
-            "boom_games": boom,
-            "bust_games": bust,
-            "injury_weeks_missed": pdata["injury_weeks_missed"],
-            "avg_projection_diff": sum(diffs) / len(diffs) if diffs else 0,
-            "projection_accuracy": sum(hits) / len(hits) if hits else 0
+            "total_points": pdata["total_points"],
+            "projected_points": ros_projection,
+            "injury_weeks_missed": pdata["injury_weeks_missed"]
         })
 
-    return pd.DataFrame(normal), pd.DataFrame(enriched)
+        trade.append({
+            "name": pdata["name"],
+            "position": pdata["position"],
+            "team": pdata["team"],
+            "total_points": pdata["total_points"],
+            "projected_points": ros_projection,
+            "injury_weeks_missed": pdata["injury_weeks_missed"],
+            "avg_projection_diff": avg_projection_diff,
+            "projection_accuracy": projection_accuracy,
+            "volatility": volatility,
+            "rest_of_season_projection": ros_projection,
+            "trade_value_score": trade_score,
+            "consistency_rating": pdata.get("total_over", 0) / len(weeks)
+        })
+
+        waiver.append({
+            "name": pdata["name"],
+            "position": pdata["position"],
+            "team": pdata["team"],
+            "total_points": pdata["total_points"],
+            "rest_of_season_projection": ros_projection,
+            "volatility": volatility,
+            "boom_games": pdata["boom_games"],
+            "upside_score": pdata["boom_games"] * avg_last_3
+        })
+
+
+    trade_df = pd.DataFrame(trade)
+    trade_df["position_rank"] = (
+        trade_df.groupby("position")["trade_value_score"]
+        .rank(ascending=False, method="dense")
+        .astype(int)
+    )
+
+    return pd.DataFrame(normal), trade_df

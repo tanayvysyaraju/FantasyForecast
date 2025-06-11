@@ -1,19 +1,21 @@
 # main.py
 from data_extraction import collect_advanced_player_stats
 from tabulate import tabulate
+from sleeper_wrapper import Stats, Players
+
 
 def main():
     season = 2024
     weeks = list(range(1,12))  # Weeks 1 through 10
 
-    normalDf, enrichedDf = collect_advanced_player_stats(season=season, weeks=weeks)
+    normalDf, tradeDf = collect_advanced_player_stats(season=season, weeks=weeks)
     print("\nTop 200 Players by Avg Points:\n")
     topno_df = normalDf.sort_values(by="total_points", ascending=False).head(200)
     print(tabulate(topno_df, headers='keys', tablefmt='pretty'))
 
-    print("\nTop 200 Players by Avg Points (Last 3 Weeks):\n")
-    topen_df = enrichedDf.sort_values(by="avg_pts_last_3", ascending=False).head(200)
-    print(tabulate(topen_df, headers='keys', tablefmt='pretty'))
+    print("\nTop 200 players by trade value\n")
+    toptd_df = tradeDf.sort_values(by="trade_value_score", ascending=False).head(200)
+    print(tabulate(toptd_df, headers='keys', tablefmt='pretty'))
 
 if __name__ == "__main__":
     main()

@@ -1,13 +1,19 @@
-from data_extraction import get_top_player_ids, get_kona_player_info, extract_stats, print_stats_table
+# main.py
+from data_extraction import collect_advanced_player_stats
+from tabulate import tabulate
 
 def main():
-    top_ids = get_top_player_ids()
+    season = 2024
+    weeks = list(range(1,12))  # Weeks 1 through 10
 
-    kona_data = get_kona_player_info()
+    normalDf, enrichedDf = collect_advanced_player_stats(season=season, weeks=weeks)
+    print("\nTop 200 Players by Avg Points:\n")
+    topno_df = normalDf.sort_values(by="total_points", ascending=False).head(200)
+    print(tabulate(topno_df, headers='keys', tablefmt='pretty'))
 
-    df = extract_stats(kona_data, top_ids)
-
-    print_stats_table(df)
+    print("\nTop 200 Players by Avg Points (Last 3 Weeks):\n")
+    topen_df = enrichedDf.sort_values(by="avg_pts_last_3", ascending=False).head(200)
+    print(tabulate(topen_df, headers='keys', tablefmt='pretty'))
 
 if __name__ == "__main__":
     main()

@@ -3,18 +3,18 @@ from data_extraction import collect_advanced_player_stats
 from tabulate import tabulate
 
 def main():
-    season = 2024
-    weeks = list(range(1,12))  # Weeks 1 through 10
 
-    waiverDf, tradeDf = collect_advanced_player_stats(season=season, weeks=weeks)
+    # After generating the dataframes from collect_advanced_player_stats()
+    waiver_df, trade_df = collect_advanced_player_stats(season=2024, weeks=range(1, 17))
 
-    print("\nTop 200 Players by Avg Points:\n")
-    topwa_df = waiverDf.sort_values(by="total_points", ascending=False).head(200)
-    print(tabulate(topwa_df, headers='keys', tablefmt='pretty'))
+    # Insert into PostgreSQL
+    from sqlalchemy import create_engine
+    engine = create_engine("postgresql+psycopg2://tanayvysyaraju@localhost:5432/fantasy_forecast")
 
-    print("\nTop 200 players by trade value\n")
-    toptd_df = tradeDf.sort_values(by="trade_value_score", ascending=False).head(200)
-    print(tabulate(toptd_df, headers='keys', tablefmt='pretty'))
+    trade_df.to_sql("trade_metrics", engine, if_exists="replace", index=False)
+    waiver_df.to_sql("waiver_trends", engine, if_exists="replace", index=False)
+    print("✅ Data inserted into PostgreSQL.")
+
 
 if __name__ == "__main__":
     main()

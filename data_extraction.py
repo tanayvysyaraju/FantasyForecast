@@ -134,6 +134,8 @@ def collect_advanced_player_stats(season, weeks):
                 "games_played": len(points)
             })
 
+    
+
     trade_df = pd.DataFrame(trade)
     trade_df["position_rank"] = (
         trade_df.groupby("position")["trade_value_score"]

@@ -104,6 +104,14 @@ def collect_advanced_player_stats(season, weeks):
             pdata["bust_games"] * 0.5 -
             pdata["injury_weeks_missed"] * 1.0
         )
+        waiver_score = (
+          avg_last_3 * 0.4 +
+          ros_projection * 0.25 +
+          pdata["boom_games"] * 0.2 -
+          volatility * 0.1 +
+          (len(points) / len(weeks)) * 5  # rewards availability
+      )
+
 
         trade.append({
             "name": pdata["name"],
@@ -120,6 +128,7 @@ def collect_advanced_player_stats(season, weeks):
             "consistency_rating": pdata.get("total_over", 0) / len(weeks)
         })
 
+
         if pid in trending_ids and avg_last_3 > 10:
             waiver.append({
                 "name": pdata["name"],
@@ -131,6 +140,7 @@ def collect_advanced_player_stats(season, weeks):
                 "boom_games": pdata["boom_games"],
                 "upside_score": pdata["boom_games"] * avg_last_3,
                 "avg_pts_last_3": avg_last_3,
+                "waiver_value_score": waiver_score,
                 "games_played": len(points)
             })
 

@@ -16,10 +16,12 @@ def load_all_players(players_api, cache_file="players_cache.json"):
         print("📦 Cached player data to file.")
     return all_players
 
-def collect_advanced_player_stats(season, weeks, position_filter=None):
+def collect_advanced_player_stats(season, weeks):
     stats_api = Stats()
     players_api = Players()
     all_players = load_all_players(players_api)
+    trending_players_raw = players_api.get_trending_players("nfl", "add", 24, 200)
+    trending_ids = {str(player["player_id"]) for player in trending_players_raw}
 
     player_data = {}
 
@@ -43,10 +45,6 @@ def collect_advanced_player_stats(season, weeks, position_filter=None):
                     name = f"{team} DEF"
                 else:
                     name = "Unknown"
-
-            # Optional filter
-            if position_filter and position not in position_filter:
-                continue
 
             if player_id not in player_data:
                 player_data[player_id] = {
@@ -86,9 +84,9 @@ def collect_advanced_player_stats(season, weeks, position_filter=None):
                 player_data[player_id]["injury_weeks_missed"] += 1
 
     # Output dataframes
-    normal, trade, waiver = [], [], []
+    trade, waiver = [], []
 
-    for pdata in player_data.values():
+    for pid, pdata in player_data.items():
         points = pdata["weekly_points"]
         diffs = pdata["projection_diffs"]
         hits = pdata["projection_hits"]
@@ -107,15 +105,6 @@ def collect_advanced_player_stats(season, weeks, position_filter=None):
             pdata["injury_weeks_missed"] * 1.0
         )
 
-        normal.append({
-            "name": pdata["name"],
-            "position": pdata["position"],
-            "team": pdata["team"],
-            "total_points": pdata["total_points"],
-            "projected_points": ros_projection,
-            "injury_weeks_missed": pdata["injury_weeks_missed"]
-        })
-
         trade.append({
             "name": pdata["name"],
             "position": pdata["position"],
@@ -131,17 +120,19 @@ def collect_advanced_player_stats(season, weeks, position_filter=None):
             "consistency_rating": pdata.get("total_over", 0) / len(weeks)
         })
 
-        waiver.append({
-            "name": pdata["name"],
-            "position": pdata["position"],
-            "team": pdata["team"],
-            "total_points": pdata["total_points"],
-            "rest_of_season_projection": ros_projection,
-            "volatility": volatility,
-            "boom_games": pdata["boom_games"],
-            "upside_score": pdata["boom_games"] * avg_last_3
-        })
-
+        if pid in trending_ids and avg_last_3 > 10:
+            waiver.append({
+                "name": pdata["name"],
+                "position": pdata["position"],
+                "team": pdata["team"],
+                "total_points": pdata["total_points"],
+                "rest_of_season_projection": ros_projection,
+                "volatility": volatility,
+                "boom_games": pdata["boom_games"],
+                "upside_score": pdata["boom_games"] * avg_last_3,
+                "avg_pts_last_3": avg_last_3,
+                "games_played": len(points)
+            })
 
     trade_df = pd.DataFrame(trade)
     trade_df["position_rank"] = (
@@ -150,4 +141,4 @@ def collect_advanced_player_stats(season, weeks, position_filter=None):
         .astype(int)
     )
 
-    return pd.DataFrame(normal), trade_df
+    return pd.DataFrame(waiver), trade_df
